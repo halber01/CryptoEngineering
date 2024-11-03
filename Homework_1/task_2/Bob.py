@@ -3,6 +3,7 @@ import threading
 import time
 
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import modes, Cipher
 from nbformat.sign import algorithms
 
@@ -17,7 +18,6 @@ TARGET_HOST = '127.0.0.1'
 awaiting_response = False
 bob_sk, bob_pk = generate_ecdh_key_pair()
 shared_key = None
-
 
 class ConnectionLostError(Exception):
     """Custom exception to indicate a lost connection."""
@@ -39,14 +39,6 @@ def listen_for_messages(conn, my_identity, peer_identity):
                 decoded_data = data.decode('utf-8')
                 print(f"{my_identity}: Receive a message: \"{decoded_data}\" ")
 
-                if "-----BEGIN PUBLIC KEY-----" in decoded_data and shared_key is None:
-                    print(f"{my_identity}: Received Bob's public key")
-                    bob_public_key = serialization.load_pem_public_key(decoded_data.encode())
-                    print(bob_public_key)
-                    shared_key = bob_sk.exchange(bob_public_key)
-                    print(f"{my_identity}: Shared key: {shared_key}")
-
-
             except (ConnectionResetError, BrokenPipeError, ConnectionLostError) as e:
                 print(f"{my_identity}: Connection lost. Reconnecting...(Press any key to continue)")
                 break
@@ -64,23 +56,9 @@ def initiate_key_exchange(conn, my_identity, peer_identity):
         encoding=serialization.Encoding.PEM,  # PEM format
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
-    conn.sendall(bob_public_key_printable)
-    print(bob_public_key_printable)
-
-    try:
-        # Waiting: Receive a message from the peer
-        data = conn.recv(1024)
-        if not data:
-            raise ConnectionLostError("Connection lost: No data received.")
-        decoded_data = data.decode('utf-8')
-        print(f"{my_identity}: Receive a the public key from Bob:\n \"{decoded_data}\" ")
-        bob_public_key = serialization.load_pem_public_key(decoded_data.encode())
-        shared_key = bob_sk.exchange(bob_public_key)
-
-    except (ConnectionResetError, BrokenPipeError, ConnectionLostError) as e:
-        print(f"{my_identity}: Connection lost. Reconnecting...(Press any key to continue)")
-        raise ConnectionLostError("Connection lost: No data received.")
-
+    message = f"Here is {my_identity}'s public key: {bob_public_key_printable}"
+    conn.sendall(message.encode('utf-8'))
+    print(message)
 
 def bob():
     my_identity = "Bob"
@@ -121,19 +99,10 @@ def bob():
                 if proceed == "Y":
                     initiate_key_exchange(conn_to_server, my_identity, peer_identity)
 
-                else:
-                    if shared_key:
-                        cipher = Cipher(algorithms.AES(shared_key), modes.ECB())
-                        encryptor = cipher.encryptor()
-                        ct = encryptor.encrypt(proceed.encode())
-                        conn_to_server.sendall(ct)
-                        print(f"{my_identity}: Sent encrypted message: \"{proceed}\"")
-
             print("Bob: Connection lost. Restarting connection...")
         except ConnectionLostError:
             print(f"{my_identity}: Attempting to reconnect...")
             time.sleep(2)  # Delay before re-entering the connection phase
-
 
 if __name__ == "__main__":
     bob()

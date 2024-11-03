@@ -21,6 +21,7 @@ def handle_client(source_client_socket, dest_client_socket, source_client_name, 
                 break
             dest_client_socket.sendall(data)
             print(f"Server: Forwarded message from {source_client_name} to {dest_client_name} ")
+            print(f"Message: {data}")
     except (ConnectionResetError, BrokenPipeError, ConnectionLostError):
         print(f"{source_client_name}: Connection lost.")
 
